@@ -7,7 +7,12 @@ set -euo pipefail
 : "${GITHUB_REPOSITORY:?Exact CI repository is required}"
 test "$(uname -s)" = Darwin
 test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-test "$GITHUB_REPOSITORY" = Tsangbaby/Gesture-X
+# Only the canonical repository and its build mirror may publish an artifact
+# under this identity; any other fork stops before compilation.
+case "$GITHUB_REPOSITORY" in
+    Tsangbaby/Gesture-X|Tsangbabe/Gesture-X) ;;
+    *) printf 'Unexpected repository: %s\n' "$GITHUB_REPOSITORY" >&2; exit 1 ;;
+esac
 test "$(git -C "$THEOS" rev-parse HEAD)" = "$THEOS_REF"
 mkdir -p "$OUT_DIR"
 {
