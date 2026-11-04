@@ -247,9 +247,22 @@ PY
     python3 - "$DEVICE" "$bundle" "$mode" "$marker" "$RESULTS" <<'PY'
 import subprocess, sys
 from pathlib import Path
-p = subprocess.run(['xcrun', 'simctl', 'launch', '--console', '--terminate-running-process',
-                    sys.argv[1], sys.argv[2], sys.argv[3]],
-                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=120)
+
+def launch(device, bundle, mode):
+    return subprocess.run(['xcrun', 'simctl', 'launch', '--console', '--terminate-running-process',
+                           device, bundle, mode],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=120)
+
+p = launch(sys.argv[1], sys.argv[2], sys.argv[3])
+# simctl can return before the app finishes its first run loop on a loaded
+# simulator, which loses the app's terminal marker. Retry the transport twice;
+# the exact-marker gate below is unchanged and every attempt stays in the log.
+for attempt in range(2):
+    if not p.returncode and sys.argv[4] in p.stdout:
+        break
+    print('CI-only relaunch after incomplete transport:', attempt + 1, p.returncode, flush=True)
+    print(p.stdout, flush=True)
+    p = launch(sys.argv[1], sys.argv[2], sys.argv[3])
 print(p.stdout, flush=True)
 print('simctl launch exit:', p.returncode, flush=True)
 # simctl reports transport success, not the app's exit status. Every case
@@ -276,6 +289,9 @@ if p.returncode or sys.argv[4] not in p.stdout:
 with open(sys.argv[5], 'a') as f:
     f.write(p.stdout + '\n')
 PY
+    # Free the simulator slot before the next case; a lingering app changes
+    # launch timing for the one that follows.
+    xcrun simctl terminate "$DEVICE" "$bundle" >/dev/null 2>&1 || true
 }
 run_case "$OLD" baseline --expect-legacy-failure BASELINE_EXPECTED_FAILURE
 run_case "$STABLE" accepted --expect-fixed 'SETTINGS_CONSTRUCTION_FAIL: root must link to 主屏幕的手势'
