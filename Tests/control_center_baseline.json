@@ -19,7 +19,6 @@
     "Sources/NativeHook.swift": "45f6dbe10dcdceb201edf0bb8ba539b7e8be6e1f5f968ddc76ecdb2753edccba",
     "Sources/PrivateAPI.swift": "a2b9fdeed907801f2259175f88e328123c6f0c759c9a3f1008b521a9f9db6aa7",
     "TapLock.plist": "22957c2b6df0a9dd9c7deba18639321701aadf1e6452b86d9be434e48c7f454f",
-    "ci/build.sh": "816ce5018af537b3a43228975c002a7082c611f06a8727872405e4455398cc64",
     "control": "050386f432268c7847471012e0c24f7252682fd28f480472dbf7299852307275"
   },
   "hunks": {

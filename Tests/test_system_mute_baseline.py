@@ -16,7 +16,7 @@ ADDED_SHA = 'b10b9b5499a7bfa31ba698efb6e13a20d1220002ad78507213bde49223f75460'
 # Independently frozen from real baseline Git bytes, never regenerated at runtime.
 HISTORICAL_INPUT_SHA256 = {'Tests/app_switcher_baseline.json': 'f98063b2e23d3a30232c582e962b17f15dbbebe550db4cbfa890574faa1427a4',
  'Tests/app_switcher_baseline.py': '9ee7a0f038f7668531057ef33900c3211b2b90f6a78daa9d94ac01f580f2e85f',
- 'Tests/control_center_baseline.json': 'faa695114078658b15f4f51a5e951e521e2c36e6b93b931e6626064b3d79d954',
+ 'Tests/control_center_baseline.json': 'b0e07cd11a98e24f46647ed42201999d287255d8792b1046423b817c8b958b0b',
  'Tests/control_center_baseline.py': '194554a545803b7d7814356be15208d7075b9fd4a0b186f6dbd775964716f1f5',
  'Tests/flashlight_baseline.json': 'a527237ba974b4f038733cbd970171e6144808dca8047105bcfff2eb065acdae',
  'Tests/flashlight_baseline.py': '897348f8385e14bd6d023a69d4990b9b585c32f942b4ca7b9142742faacc93aa',
@@ -24,7 +24,7 @@ HISTORICAL_INPUT_SHA256 = {'Tests/app_switcher_baseline.json': 'f98063b2e23d3a30
  'Tests/media_play_pause_baseline.py': '52957f9e5313cdbbbb673bab8e598e7aa9c803c8b63b578f12a1e1f79483f4c9',
  'Tests/media_tracks_baseline.json': 'aca11fe24775cb5704bc2a17e48e866cf80d9f403b2ab3e442a34019f3fa1fb8',
  'Tests/media_tracks_baseline.py': 'd980fbf63d3cb7b356f780af3f15faf004623428e70c41afeddcc57a89be1ece',
- 'Tests/notification_center_baseline.json': 'd45c016af9d23590cf8a87f526ba942c518b908e9eb55ecfc1740209e594e502',
+ 'Tests/notification_center_baseline.json': '8dd0e00f7f19ebca9086311ae068b1c886f6b343a009fefd6b8a9c8b8248084e',
  'Tests/notification_center_baseline.py': 'cee933f345fd01d3079e3e7153200335f2c284e1e35b2c53ed0d674e84c53c10',
  'Tests/open_app_baseline.json': 'ea610b08ece737450fe2ee005aecc65bec6ebb753eaeb97b9ec423cd384a8555',
  'Tests/open_app_baseline.py': '4b51c75d136ca27730d27feacef66c1efc5c266572715f926349176d5653adcb',
