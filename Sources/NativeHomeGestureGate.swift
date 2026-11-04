@@ -4,11 +4,11 @@ import TapLockNativeRuntime
 
 /// M1 mechanism probe. Vetoes the system Home gesture when it starts inside the
 /// bottom activation band, so `BottomSwipeUp` can own that swipe. The owner is
-/// resolved from a fixed list of SpringBoard classes: the reference package keeps
-/// its name encrypted, and scanning every class at dyld time realises unrelated
-/// classes during image loading. Zero or multiple owners are treated as
-/// unsupported. Every rejection path forwards to the original implementation, so
-/// the native gesture keeps working when anything is missing.
+/// resolved from a fixed candidate list first and from one deferred full scan
+/// afterwards: the reference package keeps its name encrypted, and the scan must
+/// not run while dyld is still loading images. Zero or multiple owners are
+/// treated as unsupported, and every rejection path forwards to the original
+/// implementation so the native gesture keeps working when anything is missing.
 enum NativeHomeGestureGate {
     private static let selector = NSSelectorFromString("shouldBeginGestureAtStartingPoint:velocity:bounds:")
 
@@ -26,12 +26,16 @@ enum NativeHomeGestureGate {
     private typealias ShouldBegin = @convention(c) (AnyObject, Selector, CGPoint, CGPoint, CGRect) -> Bool
 
     private static var original: IMP?
+    private static var scans = 0
 
     static var isInstalled: Bool { original != nil }
 
+    /// Called on every activation until it succeeds. The full scan is deferred to
+    /// this point because enumerating every class during image loading realised
+    /// unrelated classes and killed the startup harness.
     static func install() {
         guard Thread.isMainThread, original == nil else { return }
-        guard let type = ownerClass(),
+        guard let type = ownerClass() ?? scannedOwnerClass(),
               let method = class_getInstanceMethod(type, selector),
               matches(method) else { return }
         original = method_getImplementation(method)
@@ -50,6 +54,26 @@ enum NativeHomeGestureGate {
         var owner: AnyClass?
         for name in candidateNames {
             guard let type = NSClassFromString(name) else { continue }
+            guard declares(type) else { continue }
+            if owner != nil { return nil }
+            owner = type
+        }
+        return owner
+    }
+
+    /// Bounded fallback: three passes at most, each accepting only a unique
+    /// declaring class. Nil keeps the feature off instead of guessing. The scan
+    /// only runs inside SpringBoard, so the simulator harness never enumerates
+    /// the host runtime.
+    private static func scannedOwnerClass() -> AnyClass? {
+        guard scans < 3, NSClassFromString("SpringBoard") != nil else { return nil }
+        scans += 1
+        var count: UInt32 = 0
+        guard let list = objc_copyClassList(&count) else { return nil }
+        defer { free(UnsafeMutableRawPointer(list)) }
+        var owner: AnyClass?
+        for index in 0..<Int(count) {
+            let type: AnyClass = list[index]
             guard declares(type) else { continue }
             if owner != nil { return nil }
             owner = type
