@@ -71,13 +71,18 @@ enum NativeHomeGestureGate {
     }
 
     private static func returns(_ method: Method) -> String? {
-        guard let raw = method_copyReturnType(method) else { return nil }
-        defer { free(raw) }
-        return String(cString: raw)
+        typeString(method_copyReturnType(method))
     }
 
     private static func argumentType(_ method: Method, _ index: UInt32) -> String? {
-        guard let raw = method_copyArgumentType(method, index) else { return nil }
+        typeString(method_copyArgumentType(method, index))
+    }
+
+    /// `method_copyReturnType` and `method_copyArgumentType` are imported as
+    /// non-optional on some SDKs and optional on others; the helper accepts a
+    /// pointer either way so both overlays compile.
+    private static func typeString(_ raw: UnsafeMutablePointer<CChar>?) -> String? {
+        guard let raw = raw else { return nil }
         defer { free(raw) }
         return String(cString: raw)
     }
