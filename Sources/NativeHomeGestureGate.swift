@@ -3,13 +3,25 @@ import ObjectiveC
 import TapLockNativeRuntime
 
 /// M1 mechanism probe. Vetoes the system Home gesture when it starts inside the
-/// bottom activation band, so `BottomSwipeUp` can own that swipe. The owning
-/// class is discovered at runtime because the reference package keeps its name
-/// encrypted; zero or multiple owners are treated as unsupported. Every rejection
-/// path forwards to the original implementation, so the native gesture keeps
-/// working when anything is missing.
+/// bottom activation band, so `BottomSwipeUp` can own that swipe. The owner is
+/// resolved from a fixed list of SpringBoard classes: the reference package keeps
+/// its name encrypted, and scanning every class at dyld time realises unrelated
+/// classes during image loading. Zero or multiple owners are treated as
+/// unsupported. Every rejection path forwards to the original implementation, so
+/// the native gesture keeps working when anything is missing.
 enum NativeHomeGestureGate {
     private static let selector = NSSelectorFromString("shouldBeginGestureAtStartingPoint:velocity:bounds:")
+
+    /// Ordered by likelihood; resolution stops at the first match and refuses
+    /// when a second class also declares the decision method.
+    private static let candidateNames = [
+        "SBIconController",
+        "SBHomeScreenViewController",
+        "SBIconListView",
+        "SBFluidSwitcherGestureManager",
+        "SBHomeGesturePanGestureRecognizer",
+        "SBDockView",
+    ]
 
     private typealias ShouldBegin = @convention(c) (AnyObject, Selector, CGPoint, CGPoint, CGRect) -> Bool
 
@@ -32,16 +44,12 @@ enum NativeHomeGestureGate {
         return unsafeBitCast(original, to: ShouldBegin.self)(receiver, command, start, velocity, bounds)
     }
 
-    /// A single class that owns the decision method. Inherited entries are
-    /// ignored, and two candidates are rejected instead of being guessed.
+    /// A single class that declares the decision method itself. Inherited
+    /// entries are ignored, and two candidates are rejected instead of guessed.
     private static func ownerClass() -> AnyClass? {
-        var count: UInt32 = 0
-        guard let list = objc_copyClassList(&count) else { return nil }
-        defer { free(UnsafeMutableRawPointer(list)) }
         var owner: AnyClass?
-        for index in 0..<Int(count) {
-            let type: AnyClass = list[index]
-            guard class_getInstanceMethod(type, selector) != nil else { continue }
+        for name in candidateNames {
+            guard let type = NSClassFromString(name) else { continue }
             guard declares(type) else { continue }
             if owner != nil { return nil }
             owner = type
