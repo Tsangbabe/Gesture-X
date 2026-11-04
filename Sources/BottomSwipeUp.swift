@@ -20,8 +20,14 @@ final class BottomSwipeUp: NSObject, UIGestureRecognizerDelegate {
 
     private override init() { super.init() }
 
+    /// Escape hatch: writing `BottomSwipeProbeDisabled = true` into
+    /// com.tsangbaby.taplock turns the probe off without uninstalling.
+    private var disabled: Bool {
+        UserDefaults(suiteName: TapLockPreferences.domain)?.bool(forKey: "BottomSwipeProbeDisabled") ?? false
+    }
+
     func start() {
-        guard Thread.isMainThread else { return }
+        guard Thread.isMainThread, !disabled else { return }
         guard !started else { return }
         started = true
         NotificationCenter.default.addObserver(
@@ -35,7 +41,7 @@ final class BottomSwipeUp: NSObject, UIGestureRecognizerDelegate {
     /// installs here as well: enumerating classes during image loading crashes,
     /// so resolution is deferred until the application is fully active.
     @objc private func activate() {
-        guard Thread.isMainThread else { return }
+        guard Thread.isMainThread, !disabled else { return }
         NativeHomeGestureGate.install()
         guard recognizers.isEmpty else { return }
         attach()

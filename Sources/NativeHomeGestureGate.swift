@@ -1,14 +1,15 @@
 import UIKit
+import Dispatch
 import ObjectiveC
 import TapLockNativeRuntime
 
 /// M1 mechanism probe. Vetoes the system Home gesture when it starts inside the
-/// bottom activation band, so `BottomSwipeUp` can own that swipe. The owner is
-/// resolved from a fixed candidate list first and from one deferred full scan
-/// afterwards: the reference package keeps its name encrypted, and the scan must
-/// not run while dyld is still loading images. Zero or multiple owners are
-/// treated as unsupported, and every rejection path forwards to the original
-/// implementation so the native gesture keeps working when anything is missing.
+/// bottom activation band, so `BottomSwipeUp` can own that swipe. Resolution goes
+/// candidates -> live recognizer owners -> a bounded SpringBoard-only name scan.
+/// The name scan never runs on the main thread: enumerating every class there
+/// stalled SpringBoard past the watchdog and dropped the device into safe mode
+/// without a crash report. Zero or multiple owners stay unsupported, and every
+/// rejection path forwards to the original implementation.
 enum NativeHomeGestureGate {
     private static let selector = NSSelectorFromString("shouldBeginGestureAtStartingPoint:velocity:bounds:")
 
@@ -26,26 +27,33 @@ enum NativeHomeGestureGate {
     private typealias ShouldBegin = @convention(c) (AnyObject, Selector, CGPoint, CGPoint, CGRect) -> Bool
 
     private static var original: IMP?
+    private static var scanning = false
     private static var scans = 0
 
     static var isInstalled: Bool { original != nil }
 
-    /// Called on every activation until it succeeds. The full scan is deferred to
-    /// this point because enumerating every class during image loading realised
-    /// unrelated classes and killed the startup harness.
+    /// Called on every activation until it succeeds.
     static func install() {
         guard Thread.isMainThread, original == nil else { return }
-        guard let type = ownerClass() ?? scannedOwnerClass(),
-              let method = class_getInstanceMethod(type, selector),
-              matches(method) else { return }
-        original = method_getImplementation(method)
-        MSHookMessageEx(type, selector, unsafeBitCast(shouldBegin, to: IMP.self), &original)
+        if let type = ownerClass() ?? liveOwnerClass() {
+            hook(type)
+            return
+        }
+        scheduleScan()
     }
 
     private static let shouldBegin: ShouldBegin = { receiver, command, start, velocity, bounds in
         if BottomSwipeUp.shared.suppresses(start: start, bounds: bounds) { return false }
         guard let original = original else { return true }
         return unsafeBitCast(original, to: ShouldBegin.self)(receiver, command, start, velocity, bounds)
+    }
+
+    private static func hook(_ type: AnyClass) {
+        guard original == nil,
+              let method = class_getInstanceMethod(type, selector),
+              matches(method) else { return }
+        original = method_getImplementation(method)
+        MSHookMessageEx(type, selector, unsafeBitCast(shouldBegin, to: IMP.self), &original)
     }
 
     /// A single class that declares the decision method itself. Inherited
@@ -61,24 +69,71 @@ enum NativeHomeGestureGate {
         return owner
     }
 
-    /// Bounded fallback: three passes at most, each accepting only a unique
-    /// declaring class. Nil keeps the feature off instead of guessing. The scan
-    /// only runs inside SpringBoard, so the simulator harness never enumerates
-    /// the host runtime.
-    private static func scannedOwnerClass() -> AnyClass? {
-        guard scans < 3, NSClassFromString("SpringBoard") != nil else { return nil }
-        scans += 1
-        var count: UInt32 = 0
-        guard let list = objc_copyClassList(&count) else { return nil }
-        defer { free(UnsafeMutableRawPointer(list)) }
-        var owner: AnyClass?
-        for index in 0..<Int(count) {
-            let type: AnyClass = list[index]
-            guard declares(type) else { continue }
-            if owner != nil { return nil }
-            owner = type
+    /// Cheap live discovery: whatever recognizer already reacts to the bottom
+    /// edge must know the decision method, either on itself or on its delegate.
+    /// Bounded by the number of windows and recognizers, so it is main-safe.
+    private static func liveOwnerClass() -> AnyClass? {
+        var found: AnyClass?
+        for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
+            for window in scene.windows {
+                if found == nil, declares(type(of: window)) { found = type(of: window) }
+                for recognizer in window.gestureRecognizers ?? [] {
+                    if found == nil, declares(type(of: recognizer)) { found = type(of: recognizer) }
+                    if found == nil, let delegate = recognizer.delegate,
+                       declares(type(of: delegate)) { found = type(of: delegate) }
+                }
+            }
         }
-        return owner
+        return found
+    }
+
+    /// Last resort. Collecting names happens off the main thread and realises
+    /// nothing; the declaring check then walks at most 80 candidates per runloop
+    /// turn, so SpringBoard never blocks long enough to trip the watchdog.
+    private static func scheduleScan() {
+        guard !scanning, scans < 2, NSClassFromString("SpringBoard") != nil else { return }
+        scanning = true
+        scans += 1
+        DispatchQueue.global(qos: .utility).async {
+            let names = springboardClassNames()
+            DispatchQueue.main.async {
+                process(names, from: 0)
+            }
+        }
+    }
+
+    private static func process(_ names: [String], from index: Int) {
+        guard original == nil else { scanning = false; return }
+        guard index < names.count else { scanning = false; return }
+        let end = min(index + 80, names.count)
+        for position in index..<end {
+            guard let type = NSClassFromString(names[position]), declares(type) else { continue }
+            hook(type)
+            if original != nil { scanning = false; return }
+        }
+        DispatchQueue.main.async {
+            process(names, from: end)
+        }
+    }
+
+    private static func springboardClassNames() -> [String] {
+        var count: UInt32 = 0
+        guard let list = objc_copyClassList(&count) else { return [] }
+        defer { free(UnsafeMutableRawPointer(list)) }
+        var names: [String] = []
+        names.reserveCapacity(256)
+        for index in 0..<Int(count) {
+            let name = String(cString: class_getName(list[index]))
+            guard name.hasPrefix("SB") || name.hasPrefix("_SB") else { continue }
+            names.append(name)
+        }
+        // Home-gesture suspects first so the first successful hook is the likely one.
+        let hints = ["Home", "Gesture", "Icon", "Switcher", "Dock"]
+        return names.sorted { left, right in
+            let leftHint = hints.contains { left.contains($0) }
+            let rightHint = hints.contains { right.contains($0) }
+            return leftHint && !rightHint
+        }
     }
 
     private static func declares(_ type: AnyClass) -> Bool {
