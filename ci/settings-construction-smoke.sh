@@ -249,9 +249,16 @@ import subprocess, sys
 from pathlib import Path
 
 def launch(device, bundle, mode):
-    return subprocess.run(['xcrun', 'simctl', 'launch', '--console', '--terminate-running-process',
-                           device, bundle, mode],
-                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=120)
+    try:
+        return subprocess.run(['xcrun', 'simctl', 'launch', '--console', '--terminate-running-process',
+                               device, bundle, mode],
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=120)
+    except subprocess.TimeoutExpired as expired:
+        partial = expired.stdout or ''
+        if isinstance(partial, bytes):
+            partial = partial.decode('utf-8', 'replace')
+        print('CI-only launch timeout after 120s', flush=True)
+        return subprocess.CompletedProcess([], 124, partial)
 
 p = launch(sys.argv[1], sys.argv[2], sys.argv[3])
 # simctl can return before the app finishes its first run loop on a loaded
