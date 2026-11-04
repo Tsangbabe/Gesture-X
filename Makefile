@@ -6,7 +6,7 @@ INSTALL_TARGET_PROCESSES = SpringBoard
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = TapLock
-TapLock_FILES = Shared/Preferences.swift Sources/AppAction.swift Sources/ControlCenterAction.swift Sources/NotificationCenterAction.swift Sources/ScreenshotAction.swift Sources/AppSwitcherAction.swift Sources/MediaPlayPauseAction.swift Sources/FlashlightAction.swift Sources/SystemMuteAction.swift Sources/PrivateAPI.swift Sources/LockAction.swift Sources/HomeDoubleTap.swift Sources/NativeHook.swift Sources/Bootstrap.swift
+TapLock_FILES = Shared/Preferences.swift Sources/AppAction.swift Sources/ControlCenterAction.swift Sources/NotificationCenterAction.swift Sources/ScreenshotAction.swift Sources/AppSwitcherAction.swift Sources/MediaPlayPauseAction.swift Sources/FlashlightAction.swift Sources/SystemMuteAction.swift Sources/PrivateAPI.swift Sources/LockAction.swift Sources/HomeDoubleTap.swift Sources/BottomSwipeGeometry.swift Sources/BottomSwipeUp.swift Sources/NativeHomeGestureGate.swift Sources/NativeHook.swift Sources/Bootstrap.swift
 TapLock_FRAMEWORKS = Foundation UIKit
 TapLock_LIBRARIES = substrate
 TapLock_SWIFT_VERSION = 5
