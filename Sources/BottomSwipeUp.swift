@@ -17,6 +17,7 @@ final class BottomSwipeUp: NSObject, UIGestureRecognizerDelegate {
     private var dispatching = false
     private var started = false
     private var lastFire: CFAbsoluteTime = 0
+    private var touches = 0
 
     private override init() { super.init() }
 
@@ -47,6 +48,19 @@ final class BottomSwipeUp: NSObject, UIGestureRecognizerDelegate {
         attach()
     }
 
+    /// Probe-only self report: every gate check that can silently disable the
+    /// veto is recorded here, so one device run names the failing stage.
+    func probeState(start: CGPoint, bounds: CGRect) -> String {
+        let point = CGPoint(x: start.x - bounds.minX, y: start.y - bounds.minY)
+        let zone = bounds.width > 0 && bounds.height > 0
+            ? String(describing: geometry(for: bounds.size).zone(for: point))
+            : "nobounds"
+        return "sensor=\(recognizers.count) vo=\(UIAccessibility.isVoiceOverRunning)"
+            + " active=\(UIApplication.shared.applicationState.rawValue)"
+            + " lock=\(LockAction.unlockedManager() != nil) zone=\(zone)"
+            + " y=\(Int(start.y)) h=\(Int(bounds.height))"
+    }
+
     /// Called by the gate hook before the system Home gesture begins.
     func suppresses(start: CGPoint, bounds: CGRect) -> Bool {
         guard Thread.isMainThread, !recognizers.isEmpty, canListen else { return false }
@@ -72,7 +86,12 @@ final class BottomSwipeUp: NSObject, UIGestureRecognizerDelegate {
                     if view.isKind(of: listType) { addPan(to: view) }
                     pending.append(contentsOf: view.subviews)
                 }
-                if !recognizers.isEmpty { return }
+                if !recognizers.isEmpty {
+                    let count = String(recognizers.count)
+                    UserDefaults(suiteName: TapLockPreferences.domain)?
+                        .set("attached:" + count, forKey: "BottomSwipeProbeSensor")
+                    return
+                }
             }
         }
     }
@@ -128,6 +147,9 @@ final class BottomSwipeUp: NSObject, UIGestureRecognizerDelegate {
         let key = ObjectIdentifier(pan)
         switch pan.state {
         case .began:
+            touches += 1
+            UserDefaults(suiteName: TapLockPreferences.domain)?
+                .set("began=\(touches)", forKey: "BottomSwipeProbeTouch")
             startPoints[key] = pan.location(in: view)
             dispatching = false
         case .ended:

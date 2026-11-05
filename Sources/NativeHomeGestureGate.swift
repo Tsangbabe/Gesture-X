@@ -27,6 +27,7 @@ enum NativeHomeGestureGate {
     private typealias ShouldBegin = @convention(c) (AnyObject, Selector, CGPoint, CGPoint, CGRect) -> Bool
 
     private static var original: IMP?
+    private static var hits = 0
     private static var scanning = false
     private static var scans = 0
 
@@ -39,13 +40,27 @@ enum NativeHomeGestureGate {
             hook(type)
             return
         }
+        note("lookup-miss")
         scheduleScan()
     }
 
     private static let shouldBegin: ShouldBegin = { receiver, command, start, velocity, bounds in
-        if BottomSwipeUp.shared.suppresses(start: start, bounds: bounds) { return false }
+        hits += 1
+        let inside = BottomSwipeUp.shared.suppresses(start: start, bounds: bounds)
+        UserDefaults(suiteName: TapLockPreferences.domain)?
+            .set("hits=\(hits) inside=\(inside) "
+                 + BottomSwipeUp.shared.probeState(start: start, bounds: bounds),
+                 forKey: "BottomSwipeProbeHits")
+        if inside { return false }
         guard let original = original else { return true }
         return unsafeBitCast(original, to: ShouldBegin.self)(receiver, command, start, velocity, bounds)
+    }
+
+    /// Probe-only state, readable in the preference domain so a device run needs
+    /// no console: Filza -> /var/mobile/Library/Preferences/com.tsangbaby.taplock.plist
+    private static func note(_ value: String) {
+        UserDefaults(suiteName: TapLockPreferences.domain)?
+            .set(value, forKey: "BottomSwipeProbeGate")
     }
 
     private static func hook(_ type: AnyClass) {
@@ -54,6 +69,7 @@ enum NativeHomeGestureGate {
               matches(method) else { return }
         original = method_getImplementation(method)
         MSHookMessageEx(type, selector, unsafeBitCast(shouldBegin, to: IMP.self), &original)
+        note("hooked:" + NSStringFromClass(type))
     }
 
     /// A single class that declares the decision method itself. Inherited
@@ -104,7 +120,11 @@ enum NativeHomeGestureGate {
 
     private static func process(_ names: [String], from index: Int) {
         guard original == nil else { scanning = false; return }
-        guard index < names.count else { scanning = false; return }
+        guard index < names.count else {
+            scanning = false
+            note("scan-empty:" + String(names.count))
+            return
+        }
         let end = min(index + 80, names.count)
         for position in index..<end {
             guard let type = NSClassFromString(names[position]), declares(type) else { continue }
