@@ -31,6 +31,7 @@ final class BottomSwipeUp: NSObject, UIGestureRecognizerDelegate {
         guard Thread.isMainThread, !disabled else { return }
         guard !started else { return }
         started = true
+        ProbeLog.write("start build=v7")
         NotificationCenter.default.addObserver(
             self, selector: #selector(activate),
             name: UIApplication.didBecomeActiveNotification, object: nil)
@@ -87,6 +88,7 @@ final class BottomSwipeUp: NSObject, UIGestureRecognizerDelegate {
                     pending.append(contentsOf: view.subviews)
                 }
                 if !recognizers.isEmpty {
+                    ProbeLog.write("sensor " + String(recognizers.count))
                     let count = String(recognizers.count)
                     UserDefaults(suiteName: TapLockPreferences.domain)?
                         .set("attached:" + count, forKey: "BottomSwipeProbeSensor")
@@ -148,6 +150,7 @@ final class BottomSwipeUp: NSObject, UIGestureRecognizerDelegate {
         switch pan.state {
         case .began:
             touches += 1
+            ProbeLog.write("touch " + String(touches))
             UserDefaults(suiteName: TapLockPreferences.domain)?
                 .set("began=\(touches)", forKey: "BottomSwipeProbeTouch")
             startPoints[key] = pan.location(in: view)
@@ -179,5 +182,24 @@ final class BottomSwipeUp: NSObject, UIGestureRecognizerDelegate {
 private var bottomSwipeInitializer: @convention(c) () -> Void = {
     DispatchQueue.main.async {
         BottomSwipeUp.shared.start()
+    }
+}
+
+/// Plain-text probe log. UserDefaults is served by cfprefsd and its on-disk
+/// plist lags behind, so a device-side check reads this file instead:
+/// /var/mobile/Library/Preferences/taplock-probe.log
+enum ProbeLog {
+    static let path = "/var/mobile/Library/Preferences/taplock-probe.log"
+
+    static func write(_ message: String) {
+        let line = Date().description + " " + message + "\n"
+        guard let data = line.data(using: .utf8) else { return }
+        if let handle = FileHandle(forWritingAtPath: path) {
+            handle.seekToEndOfFile()
+            handle.write(data)
+            handle.closeFile()
+        } else {
+            try? data.write(to: URL(fileURLWithPath: path))
+        }
     }
 }

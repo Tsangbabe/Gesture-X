@@ -49,6 +49,7 @@ enum NativeHomeGestureGate {
         hits += 1
         let inside = BottomSwipeUp.shared.suppresses(start: start, bounds: bounds)
         let called = object_getClass(receiver).map { NSStringFromClass($0) } ?? "?"
+        ProbeLog.write("hit " + String(hits) + " " + called + " inside=" + String(inside))
         UserDefaults(suiteName: TapLockPreferences.domain)?
             .set("hits=\(hits) class=\(called) inside=\(inside) "
                  + BottomSwipeUp.shared.probeState(start: start, bounds: bounds),
@@ -71,6 +72,7 @@ enum NativeHomeGestureGate {
     private static func note(_ value: String) {
         UserDefaults(suiteName: TapLockPreferences.domain)?
             .set(value, forKey: "BottomSwipeProbeGate")
+        ProbeLog.write("gate " + value)
     }
 
     private static func hook(_ type: AnyClass) {
