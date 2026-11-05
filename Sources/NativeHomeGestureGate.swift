@@ -26,16 +26,17 @@ enum NativeHomeGestureGate {
 
     private typealias ShouldBegin = @convention(c) (AnyObject, Selector, CGPoint, CGPoint, CGRect) -> Bool
 
-    private static var original: IMP?
+    private static var originals: [ObjectIdentifier: IMP] = [:]
+    private static var hooked: [String] = []
     private static var hits = 0
     private static var scanning = false
     private static var scans = 0
 
-    static var isInstalled: Bool { original != nil }
+    static var isInstalled: Bool { !originals.isEmpty }
 
     /// Called on every activation until it succeeds.
     static func install() {
-        guard Thread.isMainThread, original == nil else { return }
+        guard Thread.isMainThread, originals.isEmpty else { return }
         if let type = ownerClass() ?? liveOwnerClass() {
             hook(type)
             return
@@ -47,13 +48,22 @@ enum NativeHomeGestureGate {
     private static let shouldBegin: ShouldBegin = { receiver, command, start, velocity, bounds in
         hits += 1
         let inside = BottomSwipeUp.shared.suppresses(start: start, bounds: bounds)
+        let called = object_getClass(receiver).map { NSStringFromClass($0) } ?? "?"
         UserDefaults(suiteName: TapLockPreferences.domain)?
-            .set("hits=\(hits) inside=\(inside) "
+            .set("hits=\(hits) class=\(called) inside=\(inside) "
                  + BottomSwipeUp.shared.probeState(start: start, bounds: bounds),
                  forKey: "BottomSwipeProbeHits")
         if inside { return false }
-        guard let original = original else { return true }
-        return unsafeBitCast(original, to: ShouldBegin.self)(receiver, command, start, velocity, bounds)
+        // The declaration may live on a superclass, so walk up before giving up.
+        var owner: AnyClass? = object_getClass(receiver)
+        while let cls = owner {
+            if let original = originals[ObjectIdentifier(cls)] {
+                return unsafeBitCast(original, to: ShouldBegin.self)(receiver, command, start,
+                                                                    velocity, bounds)
+            }
+            owner = class_getSuperclass(cls)
+        }
+        return true
     }
 
     /// Probe-only state, readable in the preference domain so a device run needs
@@ -64,12 +74,15 @@ enum NativeHomeGestureGate {
     }
 
     private static func hook(_ type: AnyClass) {
-        guard original == nil,
+        let key = ObjectIdentifier(type)
+        guard originals[key] == nil,
               let method = class_getInstanceMethod(type, selector),
               matches(method) else { return }
-        original = method_getImplementation(method)
+        var original = method_getImplementation(method)
+        originals[key] = original
         MSHookMessageEx(type, selector, unsafeBitCast(shouldBegin, to: IMP.self), &original)
-        note("hooked:" + NSStringFromClass(type))
+        hooked.append(NSStringFromClass(type))
+        note("hooked://(hooked.count):" + hooked.joined(separator: ","))
     }
 
     /// A single class that declares the decision method itself. Inherited
@@ -119,17 +132,20 @@ enum NativeHomeGestureGate {
     }
 
     private static func process(_ names: [String], from index: Int) {
-        guard original == nil else { scanning = false; return }
         guard index < names.count else {
             scanning = false
-            note("scan-empty:" + String(names.count))
+            if hooked.isEmpty { note("scan-empty:" + String(names.count)) }
             return
         }
         let end = min(index + 80, names.count)
         for position in index..<end {
+            if hooked.count >= 24 { break }
             guard let type = NSClassFromString(names[position]), declares(type) else { continue }
             hook(type)
-            if original != nil { scanning = false; return }
+        }
+        if hooked.count >= 24 {
+            scanning = false
+            return
         }
         DispatchQueue.main.async {
             process(names, from: end)
