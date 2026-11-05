@@ -120,10 +120,16 @@ enum NativeHomeGestureGate {
         var count: UInt32 = 0
         guard let list = objc_copyClassList(&count) else { return [] }
         defer { free(UnsafeMutableRawPointer(list)) }
+        // Read the buffer as raw class pointers. Binding an entry to AnyClass makes
+        // Swift retain class metadata as an object; pure Swift classes are not heap
+        // objects, so that retain corrupts the process and later traps inside
+        // CoreFoundation message forwarding.
+        let classes = UnsafeRawPointer(list).bindMemory(to: UnsafeRawPointer.self,
+                                                       capacity: Int(count))
         var names: [String] = []
         names.reserveCapacity(256)
         for index in 0..<Int(count) {
-            let name = String(cString: class_getName(list[index]))
+            let name = String(cString: rawClassName(classes[index]))
             guard name.hasPrefix("SB") || name.hasPrefix("_SB") else { continue }
             names.append(name)
         }
@@ -174,3 +180,8 @@ enum NativeHomeGestureGate {
         return String(cString: raw)
     }
 }
+
+/// `class_getName` declared with a raw pointer so the caller never bridges a
+/// class list entry to `AnyClass` and never retains class metadata as an object.
+@_silgen_name("class_getName")
+private func rawClassName(_ cls: UnsafeRawPointer) -> UnsafePointer<CChar>
