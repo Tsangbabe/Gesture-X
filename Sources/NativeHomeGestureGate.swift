@@ -78,11 +78,13 @@ enum NativeHomeGestureGate {
         guard originals[key] == nil,
               let method = class_getInstanceMethod(type, selector),
               matches(method) else { return }
-        var original = method_getImplementation(method)
-        originals[key] = original
+        let previous = method_getImplementation(method)
+        var original: IMP?
         MSHookMessageEx(type, selector, unsafeBitCast(shouldBegin, to: IMP.self), &original)
+        originals[key] = original ?? previous
         hooked.append(NSStringFromClass(type))
-        note("hooked://(hooked.count):" + hooked.joined(separator: ","))
+        let count = String(hooked.count)
+        note("hooked:" + count + ":" + hooked.joined(separator: ","))
     }
 
     /// A single class that declares the decision method itself. Inherited
